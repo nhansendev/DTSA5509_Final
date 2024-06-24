@@ -27,8 +27,10 @@ def inspect_df(dataset):
     for col in dataset.columns:
         vals, counts = np.unique(dataset[col], return_counts=True)
         if vals.dtype == np.object_:
+            # Describe categorical data
             print(f"{col.ljust(clen)}: {vals.tolist()}, {counts.tolist()}")
         else:
+            # Describe numerical data range
             print(f"{col.ljust(clen)}: {vals.min():.3f} to {vals.max():.3f}")
 
 
@@ -79,11 +81,13 @@ def model_ensembles(models, N=range(2, 6)):
     # Shared by all models
     y_test = models[0].test_y
 
+    # Separately track which combinations maximize the F1-Score and the Recall
     data_f1 = {n: None for n in N}
     data_recall = {n: None for n in N}
     for n in N:
         model_sets = list(combinations(range(len(models)), n))
         for s in model_sets:
+            # Use majority-vote to determine if a stroke is predicted
             pred = np.mean([preds[i] for i in s], axis=0) >= 0.5
             f1 = f1_score(y_test, pred)
             rec = recall_score(y_test, pred)
@@ -112,6 +116,7 @@ def model_ensembles(models, N=range(2, 6)):
 
 
 def plot_ensembles(df_f1, df_recall, ref_values):
+    # Plot the performance of the ensembles versus their size
     plt.plot(df_f1.index, df_f1["f1"], "b")
     plt.plot(df_f1.index, df_f1["rec"], "tab:orange")
     plt.plot(df_f1.index, df_f1["prec"], "g")
@@ -139,6 +144,7 @@ def plot_ensembles(df_f1, df_recall, ref_values):
 
 
 def pair_plot(dataset, category_maps, figsize=(16, 12)):
+    # Create a pair plot of the dataset
     axs = pd.plotting.scatter_matrix(
         dataset,
         figsize=figsize,
@@ -148,6 +154,7 @@ def pair_plot(dataset, category_maps, figsize=(16, 12)):
         alpha=0.5,
     )
     N = len(dataset.columns) - 1
+    # Change numeric labels to category names and Yes/No for binary
     for i, c in enumerate(dataset.columns):
         if c in category_maps.keys():
             axs[i, 0].set_yticks(list(range(len(category_maps[c].keys()))))
@@ -177,6 +184,7 @@ def PCA_plot(
     cmax=5,
     legend_loc="lower left",
 ):
+    # Visualize the results of the Principle Component Analysis
     r = pairs // cmax + 1
     c = min(cmax, pairs)
     fig, ax = plt.subplots(r, c, sharey="all")
@@ -216,6 +224,7 @@ def PCA_plot(
             axs[p].add_artist(legend1)
 
         texts = []
+        # Plot arrows and labels for each component based on their coefficients in the PCA
         for i in range(components.shape[0]):
             if ((components[p1, i] ** 2 + components[p2, i] ** 2) ** 0.5) > thr:
                 axs[p].arrow(
@@ -246,11 +255,13 @@ def PCA_plot(
 
         adjust_text(texts, ax=axs[p], avoid_self=True)
 
+    # Hide unused axes
     for i in range(1, len(axs) - p):
         axs[i + p].set_visible(False)
 
 
 def plot_manual_search_grid(train_scores, test_scores, params, size=(16, 8)):
+    # Visualize the results of performing grid search
     keys = list(params.keys())
     vals = list(params.values())
 
@@ -258,10 +269,10 @@ def plot_manual_search_grid(train_scores, test_scores, params, size=(16, 8)):
     axs = fig.axes
     fig.set_size_inches(size)
 
-    # plt.subplots_adjust(left=0.2, right=0.95, bottom=0.15, top=0.95)
     axs[0].imshow(train_scores, interpolation="nearest", cmap="RdYlGn")
     axs[1].imshow(test_scores, interpolation="nearest", cmap="RdYlGn")
 
+    # Add numeric labels to supplement the colors in the grid
     for i in range(train_scores.shape[0]):
         for j in range(train_scores.shape[1]):
             axs[0].text(j, i, f"{train_scores[i][j]:.3f}", ha="center", va="center")
@@ -282,42 +293,14 @@ def plot_manual_search_grid(train_scores, test_scores, params, size=(16, 8)):
     plt.show()
 
 
-def BMI_hist(dataset_numeric, bins, stroke_indexes, indexes):
-    fig, ax = plt.subplots(1, 2)
-    axs = fig.axes
-    fig.set_size_inches(10, 4)
-
-    axs[0].hist(dataset_numeric["bmi"], bins=bins)
-    axs[1].hist(dataset_numeric["bmi"][stroke_indexes], bins=bins)
-
-    tmp = dataset_numeric["bmi"].copy(deep=True)
-    cutoff = np.min(dataset_numeric["bmi"][indexes])
-    print(f"BMI Truncation Value: {cutoff:.2f}")
-    print(f"Observations Affected: {sum(indexes)} ({sum(indexes)/len(tmp):.2%})")
-    tmp[indexes] = cutoff
-
-    axs[0].hist(tmp, bins=bins, alpha=0.5)
-    axs[1].hist(tmp[stroke_indexes], bins=bins, alpha=0.5)
-    axs[0].legend(["BMI", "Winsorized"])
-    axs[1].legend(["Strokes", "Winsorized"])
-    axs[0].set_title("Addressing BMI Data Outliers")
-    axs[0].set_xlabel("BMI")
-    axs[1].set_xlabel("BMI")
-    axs[0].set_ylabel("Count")
-    axs[1].set_ylabel("Count")
-    plt.tight_layout()
-    plt.show()
-
-    return cutoff
-
-
 class GridSearch:
+    # A custom implementation of grid search, including cross-validation and plotting
     def __init__(
         self, data, params, estimator, cv=3, rebalance=True, random_seed=0
     ) -> None:
         self.params = params
         self.estimator = estimator
-        self.cv = cv
+        self.cv = cv  # cross-validation qty
         self.data = data
         self.rebalance = rebalance
         self.random_seed = random_seed
@@ -370,6 +353,8 @@ class GridSearch:
         return self.data_to_XY(data_train), self.data_to_XY(data_test)
 
     def get_scores(self, verbose=True):
+        # Calculate training F1-Score as well as
+        # testing F1-score, recall, and precision
         if self.best_test_model is None:
             self.get_best_test_model()
 
@@ -390,6 +375,7 @@ class GridSearch:
         }
 
     def plot_confusion_matrix(self):
+        # Show the test confusion matrix of the best model
         if self.best_test_model is None:
             self.get_best_test_model()
 
@@ -403,12 +389,14 @@ class GridSearch:
         plt.show()
 
     def plot_search_grid(self, size=(16, 8)):
+        # Show the result of the parameter grid search
         plot_manual_search_grid(*self.get_matrices(), self.params, size=size)
 
     def copy_estimator(self):
         return deepcopy(self.estimator)
 
     def get_best_test_model(self):
+        # Train an instance of the estimator using the best parameter set
         model = self.copy_estimator()
         params = self.get_best_test_params()
         for k, v in params.items():
@@ -418,6 +406,7 @@ class GridSearch:
         return model
 
     def fit(self, verbose=True):
+        # Perform grid search
         st = time.time()
         dlen = len(self.data_df)
         for row in range(len(self.data_df)):
@@ -439,6 +428,7 @@ class GridSearch:
         return time.time() - st
 
     def eval(self, name, model_dict, plot_confusion=True, verbose=True):
+        # Perform grid search and report performance, with optional plots
         duration = self.fit(verbose)
         stats = self.get_scores(verbose)
         stats["time"] = duration
@@ -450,9 +440,11 @@ class GridSearch:
             self.plot_confusion_matrix()
 
     def test(self, model, X, Y):
+        # Evaluate a given model's performance
         return f1_score(Y, model.predict(X))
 
     def get_matrices(self):
+        # Get testing and training scores as numpy matrices (for grid plot)
         train_scores = np.array(self.data_df["train"]).reshape(*self.val_lens)
         test_scores = np.array(self.data_df["test"]).reshape(*self.val_lens)
         return train_scores, test_scores
